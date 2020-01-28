@@ -661,6 +661,21 @@ bool OGROAPIFDataset::LoadJSONCollections(const CPLString& osResultIn)
 }
 
 /************************************************************************/
+/*                         ConcatenateURLParts()                        */
+/************************************************************************/
+
+static std::string ConcatenateURLParts(const std::string& osPart1,
+                                       const std::string& osPart2)
+{
+    if( !osPart1.empty() && osPart1.back() == '/' &&
+        !osPart2.empty() && osPart2.front() == '/' )
+    {
+        return osPart1.substr(0, osPart1.size() - 1) + osPart2;
+    }
+    return osPart1 + osPart2;
+}
+
+/************************************************************************/
 /*                              Open()                                  */
 /************************************************************************/
 
@@ -714,7 +729,7 @@ bool OGROAPIFDataset::Open(GDALOpenInfo* poOpenInfo)
         return LoadJSONCollection(oRoot);
     }
 
-    if( !Download(m_osRootURL + "/collections",
+    if( !Download(ConcatenateURLParts(m_osRootURL, "/collections"),
             MEDIA_TYPE_JSON, osResult, osContentType) )
     {
         return false;
@@ -851,7 +866,7 @@ OGROAPIFLayer::OGROAPIFLayer(OGROAPIFDataset* poDS,
     m_bIsGeographicCRS = true;
 
     // We might check in the links, but the spec mandates that construct of URL
-    m_osURL = m_poDS->m_osRootURL + "/collections/" + osName + "/items";
+    m_osURL = ConcatenateURLParts(m_poDS->m_osRootURL, "/collections/" + osName + "/items");
     m_osPath = "/collections/" + osName + "/items";
 
     OGROAPIFLayer::ResetReading();
@@ -1913,7 +1928,8 @@ CPLString OGROAPIFLayer::BuildFilterCQLText(const swq_expr_node* poNode)
               poNode->nOperation == SWQ_GE ||
               poNode->nOperation == SWQ_LT ||
               poNode->nOperation == SWQ_LE ||
-              poNode->nOperation == SWQ_LIKE) &&
+              poNode->nOperation == SWQ_LIKE ||
+              poNode->nOperation == SWQ_ILIKE) &&
              poNode->nSubExprCount == 2 &&
              poNode->papoSubExpr[0]->eNodeType == SNT_COLUMN &&
              poNode->papoSubExpr[1]->eNodeType == SNT_CONSTANT )
@@ -1941,6 +1957,7 @@ CPLString OGROAPIFLayer::BuildFilterCQLText(const swq_expr_node* poNode)
                 case SWQ_LT: osRet += " < "; break;
                 case SWQ_LE: osRet += " <= "; break;
                 case SWQ_LIKE: osRet += " LIKE "; break;
+                case SWQ_ILIKE: osRet += " ILIKE "; break;
                 default: CPLAssert(false); break;
             }
             if( poNode->papoSubExpr[1]->field_type == SWQ_STRING )

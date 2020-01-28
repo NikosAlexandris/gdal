@@ -1,9 +1,8 @@
-.. configoptions_index:
+.. _python_api_ref:
 
 ================================================================================
-Index of configuration options
+Python API reference
 ================================================================================
 
-List of configuration options and where they apply:
+See `API reference <../python/index.html>`_
 
-.. include:: configoptions_index_generated.rst

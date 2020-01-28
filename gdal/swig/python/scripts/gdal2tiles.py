@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ******************************************************************************
 #  $Id$
@@ -485,6 +485,13 @@ def exit_with_error(message, details=""):
         sys.stderr.write("\n\n%s\n" % details)
 
     sys.exit(2)
+
+
+def set_cache_max(cache_in_bytes):
+    # We set the maximum using `SetCacheMax` and `GDAL_CACHEMAX` to support both fork and spawn as multiprocessing start methods.
+    # https://github.com/OSGeo/gdal/pull/2112
+    os.environ['GDAL_CACHEMAX'] = '%d' % int(cache_in_bytes / 1024 / 1024)
+    gdal.SetCacheMax(cache_in_bytes)
 
 
 def generate_kml(tx, ty, tz, tileext, tile_size, tileswne, options, children=None, **args):
@@ -1426,6 +1433,9 @@ class GDAL2Tiles(object):
             zoom_min, zoom_max = minmax[:2]
             self.tminz = int(zoom_min)
             if zoom_max:
+                if int(zoom_max) < self.tminz:
+                    raise Exception('max zoom (%d) less than min zoom (%d)' %
+                                    (int(zoom_max), self.tminz))
                 self.tmaxz = int(zoom_max)
             else:
                 self.tmaxz = int(zoom_min)
@@ -1508,7 +1518,7 @@ class GDAL2Tiles(object):
             if not in_srs:
                 exit_with_error(
                     "Input file has unknown SRS.",
-                    "Use --s_srs ESPG:xyz (or similar) to provide source reference system.")
+                    "Use --s_srs EPSG:xyz (or similar) to provide source reference system.")
 
             if not has_georeference(input_dataset):
                 exit_with_error(
@@ -2884,7 +2894,9 @@ def multi_threaded_tiling(input_file, output_folder, options):
     nb_processes = options.nb_processes or 1
 
     # Make sure that all processes do not consume more than `gdal.GetCacheMax()`
-    os.environ['GDAL_CACHEMAX'] = '%d' % max(1, int(gdal.GetCacheMax() / 1024 / 1024 / nb_processes))
+    gdal_cache_max = gdal.GetCacheMax()
+    gdal_cache_max_per_process = max(1024 * 1024, math.floor(gdal_cache_max / nb_processes))
+    set_cache_max(gdal_cache_max_per_process)
 
     pool = Pool(processes=nb_processes)
 
@@ -2908,6 +2920,9 @@ def multi_threaded_tiling(input_file, output_folder, options):
 
     pool.close()
     pool.join()     # Jobs finished
+
+    # Set the maximum cache back to the original value
+    set_cache_max(gdal_cache_max)
 
     create_overview_tiles(conf, output_folder, options)
 

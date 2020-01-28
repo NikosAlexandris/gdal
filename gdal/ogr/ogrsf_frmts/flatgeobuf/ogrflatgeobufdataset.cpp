@@ -32,6 +32,9 @@
 
 #include "header_generated.h"
 
+using namespace flatbuffers;
+using namespace FlatGeobuf;
+
 static int OGRFlatGeobufDriverIdentify(GDALOpenInfo* poOpenInfo){
     if( STARTS_WITH_CI(poOpenInfo->pszFilename, "FGB:") )
         return TRUE;
@@ -50,7 +53,7 @@ static int OGRFlatGeobufDriverIdentify(GDALOpenInfo* poOpenInfo){
     if( pabyHeader[0] == 0x66 &&
         pabyHeader[1] == 0x67 &&
         pabyHeader[2] == 0x62 ) {
-        if (pabyHeader[3] == 0x00) {
+        if (pabyHeader[3] == 0x02) {
             CPLDebug("FlatGeobuf", "Verified magicbytes");
             return TRUE;
         } else {
@@ -264,7 +267,7 @@ bool OGRFlatGeobufDataset::OpenFile(const char* pszFilename, VSILFILE* fp, bool 
         return false;
     }
     if (bVerifyBuffers) {
-        flatbuffers::Verifier v(buf.get(), headerSize);
+        Verifier v(buf.get(), headerSize);
         const auto ok = VerifyHeaderBuffer(v);
         if (!ok) {
             CPLError(CE_Failure, CPLE_AppDefined, "Header failed consistency verification");
@@ -277,8 +280,10 @@ bool OGRFlatGeobufDataset::OpenFile(const char* pszFilename, VSILFILE* fp, bool 
 
     const auto featuresCount = header->features_count();
 
-    if (featuresCount > std::numeric_limits<size_t>::max() / 8) {
-        CPLError(CE_Failure, CPLE_AppDefined, "Too many features for this architecture");
+    if (featuresCount > std::min(
+            static_cast<uint64_t>(std::numeric_limits<size_t>::max() / 8),
+            static_cast<uint64_t>(100) * 1000 * 1000 * 1000)) {
+        CPLError(CE_Failure, CPLE_AppDefined, "Too many features");
         return false;
     }
 
@@ -296,7 +301,7 @@ bool OGRFlatGeobufDataset::OpenFile(const char* pszFilename, VSILFILE* fp, bool 
     }
 
     uint64_t offsetIndices = 0;
-    if (featuresCount > 0) {
+    if (featuresCount > 0 && index_node_size > 0) {
         CPLDebug("FlatGeobuf", "Feature indices start at offset (%lu)", static_cast<long unsigned int>(offset));
         offsetIndices = offset;
         offset += featuresCount * 8;
@@ -359,17 +364,9 @@ int OGRFlatGeobufDataset::TestCapability( const char * pszCap )
 {
     if (EQUAL(pszCap, ODsCCreateLayer))
         return m_bCreate && (m_bIsDir || m_apoLayers.empty());
-    else if (EQUAL(pszCap, OLCSequentialWrite))
-        return m_bCreate;
-    else if (EQUAL(pszCap, OLCCreateGeomField))
-        return m_bCreate;
+    else if (EQUAL(pszCap, ODsCCurveGeometries))
+        return true;
     else if (EQUAL(pszCap, ODsCMeasuredGeometries))
-        return true;
-    else if (EQUAL(pszCap, OLCFastFeatureCount))
-        return true;
-    else if (EQUAL(pszCap, OLCFastGetExtent))
-        return true;
-    else if (EQUAL(pszCap, OLCFastSpatialFilter))
         return true;
     else
         return false;

@@ -8,6 +8,8 @@ HDF4 -- Hierarchical Data Format Release 4 (HDF4)
 
 .. shortname:: HDF4Image
 
+.. build_dependencies:: libdf
+
 There are two HDF formats, HDF4 (4.x and previous releases) and HDF5.
 These formats are completely different and NOT compatible. This driver
 intended for HDF4 file formats importing. NASA's Earth Observing System
@@ -215,6 +217,14 @@ Metadata
 All HDF4 attributes are transparently translated as GDAL metadata. In
 the HDF file attributes may be assigned assigned to the whole file as
 well as to particular subdatasets.
+
+Multidimensional API support
+----------------------------
+
+.. versionadded:: 3.1
+
+The HDF4 driver supports the :ref:`multidim_raster_data_model` for reading
+operations.
 
 Driver building
 ---------------

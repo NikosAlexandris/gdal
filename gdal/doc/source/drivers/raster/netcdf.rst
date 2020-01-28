@@ -6,6 +6,8 @@ NetCDF: Network Common Data Form
 
 .. shortname:: netCDF
 
+.. build_dependencies:: libnetcdf
+
 This format is supported for read and write access. This page only
 describes the raster support (you can find documentation for the :ref:`vector
 side <vector.netcdf>`) NetCDF is an interface for
@@ -423,6 +425,14 @@ NetCDF-4 groups on reading:
    now also search in parent groups and their childs as specified in
    `Support of groups in
    CF <https://github.com/cf-convention/cf-conventions/issues/144>`__
+
+Multidimensional API support
+----------------------------
+
+.. versionadded:: 3.1
+
+The netCDF driver supports the :ref:`multidim_raster_data_model` for reading and
+creation operations.
 
 Driver building
 ---------------

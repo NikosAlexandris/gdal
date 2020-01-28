@@ -17,7 +17,8 @@ RUN apt-get update -y \
     && apt-get install -y --fix-missing --no-install-recommends \
             software-properties-common build-essential ca-certificates \
             git make cmake wget unzip libtool automake \
-            zlib1g-dev libsqlite3-dev pkg-config sqlite3
+            zlib1g-dev libsqlite3-dev pkg-config sqlite3 libcurl4-gnutls-dev \
+            libtiff5-dev
 
 # Setup build env for GDAL
 RUN apt-get update -y \
@@ -25,7 +26,7 @@ RUN apt-get update -y \
        libcharls-dev libopenjp2-7-dev libcairo2-dev \
        python3-dev python3-numpy \
        libpng-dev libjpeg-dev libgif-dev liblzma-dev libgeos-dev \
-       curl libcurl4-gnutls-dev libxml2-dev libexpat-dev libxerces-c-dev \
+       curl libxml2-dev libexpat-dev libxerces-c-dev \
        libnetcdf-dev libpoppler-dev libpoppler-private-dev \
        libspatialite-dev swig libhdf4-alt-dev libhdf5-serial-dev \
        libfreexl-dev unixodbc-dev libwebp-dev libepsilon-dev \
@@ -96,7 +97,7 @@ RUN mkdir mongocxx \
     && for i in /build_thirdparty/usr/bin/*; do strip -s $i 2>/dev/null || /bin/true; done
 
 # Build tiledb
-ARG TILEDB_VERSION=1.5.0
+ARG TILEDB_VERSION=1.7.2
 RUN mkdir tiledb \
     && wget -q https://github.com/TileDB-Inc/TileDB/archive/${TILEDB_VERSION}.tar.gz -O - \
         | tar xz -C tiledb --strip-components=1 \
@@ -249,18 +250,18 @@ RUN date
 # PROJ dependencies
 RUN apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        libsqlite3-0 \
-        curl unzip
+        libsqlite3-0 libtiff5 libcurl4 \
+        curl unzip ca-certificates
 
 # GDAL dependencies
 RUN apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         libcharls1 libopenjp2-7 libcairo2 python3-numpy \
         libpng16-16 libjpeg-turbo8 libgif7 liblzma5 libgeos-3.6.2 libgeos-c1v5 \
-        libcurl4 libxml2 libexpat1 \
+        libxml2 libexpat1 \
         libxerces-c3.2 libnetcdf-c++4 netcdf-bin libpoppler73 libspatialite7 gpsbabel \
         libhdf4-0-alt libhdf5-100 libhdf5-cpp-100 poppler-utils libfreexl1 unixodbc libwebp6 \
-        libepsilon1 liblcms2-2 libpcre3 libcrypto++ libdap25 libdapclient6v5 libfyba0 \
+        libepsilon1 liblcms2-2 libpcre3 libcrypto++6 libdap25 libdapclient6v5 libfyba0 \
         libkmlbase1 libkmlconvenience1 libkmldom1 libkmlengine1 libkmlregionator1 libkmlxsd1 \
         libmysqlclient20 libogdi3.2 libcfitsio5 openjdk-8-jre \
         libzstd1 bash bash-completion libpq5 libssl1.1 \

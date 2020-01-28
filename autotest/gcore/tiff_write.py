@@ -37,11 +37,24 @@ from osgeo import gdal
 from osgeo import osr
 import pytest
 
-sys.path.append('../../gdal/swig/python/samples')
-
 import gdaltest
 
 run_tiff_write_api_proxy = True
+
+###############################################################################
+
+
+def _check_cog(filename, check_tiled=True, full_check=False):
+
+    path = '../../gdal/swig/python/samples'
+    if path not in sys.path:
+        sys.path.append(path)
+    import validate_cloud_optimized_geotiff
+    try:
+        _, errors, _ = validate_cloud_optimized_geotiff.validate(filename, check_tiled=check_tiled, full_check=full_check)
+        assert not errors, 'validate_cloud_optimized_geotiff failed'
+    except OSError:
+        pytest.fail('validate_cloud_optimized_geotiff failed')
 
 ###############################################################################
 # Get the GeoTIFF driver, and verify a few things about it.
@@ -2004,7 +2017,7 @@ def test_tiff_write_64():
     wkt = ds.GetProjection()
     ds = None
 
-    expected_wkt = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AXIS["Latitude",NORTH],AXIS["Longitude",EAST],AUTHORITY["EPSG","4326"]]"""
+    expected_wkt = """GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AXIS["Latitude",NORTH],AXIS["Longitude",EAST],AUTHORITY["EPSG","4326"]]"""
 
     assert wkt == expected_wkt, 'coordinate system does not exactly match.'
 
@@ -2977,12 +2990,7 @@ def test_tiff_write_87():
 
     ds = None
 
-    import validate_cloud_optimized_geotiff
-    try:
-        _, errors, _ = validate_cloud_optimized_geotiff.validate('tmp/tiff_write_87_dst.tif', check_tiled=False, full_check=True)
-        assert not errors, 'validate_cloud_optimized_geotiff failed'
-    except OSError:
-        pytest.fail('validate_cloud_optimized_geotiff failed')
+    _check_cog('tmp/tiff_write_87_dst.tif', check_tiled=False, full_check=True)
 
     gdaltest.tiff_drv.Delete('tmp/tiff_write_87_src.tif')
     gdaltest.tiff_drv.Delete('tmp/tiff_write_87_dst.tif')
@@ -3395,12 +3403,7 @@ def test_tiff_write_96(other_options = [], nbands = 1, nbits = 8):
             'did not get expected checksums'
         assert ds.GetMetadataItem('HAS_USED_READ_ENCODED_API', '_DEBUG_') == '0'
 
-    import validate_cloud_optimized_geotiff
-    try:
-        _, errors, _ = validate_cloud_optimized_geotiff.validate('tmp/tiff_write_96_dst.tif', check_tiled=False, full_check=True)
-        assert not errors, 'validate_cloud_optimized_geotiff failed'
-    except OSError:
-        pytest.fail('validate_cloud_optimized_geotiff failed')
+    _check_cog('tmp/tiff_write_96_dst.tif', check_tiled=False, full_check=True)
 
     gdaltest.tiff_drv.Delete('tmp/tiff_write_96_src.tif')
     gdaltest.tiff_drv.Delete('tmp/tiff_write_96_dst.tif')

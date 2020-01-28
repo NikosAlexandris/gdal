@@ -569,6 +569,22 @@ def test_tiff_srs_write_epsg4979_geotiff1_1():
     _create_geotiff1_1_from_copy_and_compare('data/epsg4979_geotiff1_1.tif')
 
 
+def test_tiff_srs_write_epsg4937_etrs89_3D_geotiff1_1():
+    if int(gdal.GetDriverByName('GTiff').GetMetadataItem('LIBGEOTIFF')) < 1600:
+        pytest.skip()
+    tmpfile = '/vsimem/tmp.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(tmpfile, 1, 1)
+    sr = osr.SpatialReference()
+    sr.ImportFromEPSG(4937)
+    ds.SetSpatialRef(sr)
+    ds = None
+    ds = gdal.Open(tmpfile)
+    assert sr.GetName() == 'ETRS89'
+    assert sr.GetAuthorityCode(None) == '4937'
+    ds = None
+    gdal.Unlink(tmpfile)
+
+
 # Deprecated way of conveying GeographicCRS 3D
 def test_tiff_srs_read_epsg4326_5030_geotiff1_1():
     ds = gdal.Open('data/epsg4326_5030_geotiff1_1.tif')
@@ -650,6 +666,7 @@ def test_tiff_srs_towgs84_from_epsg_do_not_write_it():
     ds = gdal.GetDriverByName('GTiff').Create(filename, 1, 1)
     srs_in = osr.SpatialReference()
     srs_in.ImportFromEPSG(31468)
+    srs_in.AddGuessedTOWGS84()
     assert srs_in.HasTOWGS84()
     ds.SetSpatialRef(srs_in)
     ds = None
@@ -666,6 +683,7 @@ def test_tiff_srs_towgs84_from_epsg_force_write_it():
     ds = gdal.GetDriverByName('GTiff').Create(filename, 1, 1)
     srs_in = osr.SpatialReference()
     srs_in.ImportFromEPSG(31468)
+    srs_in.AddGuessedTOWGS84()
     assert srs_in.HasTOWGS84()
     with gdaltest.config_option('GTIFF_WRITE_TOWGS84', 'YES'):
         ds.SetSpatialRef(srs_in)
@@ -712,3 +730,19 @@ def test_tiff_srs_towgs84_with_epsg_code_but_non_default_TOWGS84():
     srs = ds.GetSpatialRef()
     assert srs.GetTOWGS84() == (1,2,3,4,5,6,7)
 
+
+def test_tiff_srs_write_epsg3857():
+    tmpfile = '/vsimem/tmp.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(tmpfile, 1, 1)
+    sr = osr.SpatialReference()
+    sr.ImportFromEPSG(3857)
+    ds.SetSpatialRef(sr)
+    ds = None
+    ds = gdal.Open(tmpfile)
+    assert sr.GetName() == 'WGS 84 / Pseudo-Mercator'
+    assert sr.GetAuthorityCode(None) == '3857'
+    f = gdal.VSIFOpenL(tmpfile, 'rb')
+    data = gdal.VSIFReadL(1, 100000, f)
+    gdal.VSIFCloseL(f)
+    gdal.Unlink(tmpfile)
+    assert b"ESRI PE String" not in data
