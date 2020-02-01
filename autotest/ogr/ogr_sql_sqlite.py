@@ -380,10 +380,10 @@ def test_ogr_sql_sqlite_2():
     ds.ReleaseResultSet(sql_lyr)
 
 ###############################################################################
-# Test that involves a join
+# Test that involves a left join
 
 
-def test_ogr_sql_sqlite_3():
+def test_ogr_sql_sqlite_left_join():
 
     ds = ogr.Open('data')
 
@@ -404,6 +404,48 @@ def test_ogr_sql_sqlite_3():
     assert count == 10
 
     ds = None
+
+###############################################################################
+# Test that involves a join on layers without fast feature count
+
+
+def test_ogr_sql_sqlite_join_layers_without_fast_feature_count():
+
+    gdal.FileFromMemBuffer('/vsimem/tblmain.csv', """id,attr1
+1,one
+2,two
+3,three
+""")
+
+    gdal.FileFromMemBuffer('/vsimem/tblaux.csv', """id,attr2
+1,ipsum
+2,lorem
+3,amet
+""")
+
+    ds = ogr.Open('/vsimem/tblmain.csv')
+    sql_lyr = ds.ExecuteSQL("SELECT tblmain.id, tblmain.attr1, tblaux.attr2 FROM tblmain JOIN '/vsimem/tblaux.csv'.tblaux AS tblaux USING (id) ORDER BY id", dialect='SQLite')
+    count = sql_lyr.GetFeatureCount()
+    sql_lyr.ResetReading()
+    f = sql_lyr.GetNextFeature()
+    assert f['id'] == '1'
+    assert f['attr1'] == 'one'
+    assert f['attr2'] == 'ipsum'
+    f = sql_lyr.GetNextFeature()
+    assert f['id'] == '2'
+    assert f['attr1'] == 'two'
+    assert f['attr2'] == 'lorem'
+    f = sql_lyr.GetNextFeature()
+    assert f['id'] == '3'
+    assert f['attr1'] == 'three'
+    assert f['attr2'] == 'amet'
+    ds.ReleaseResultSet(sql_lyr)
+    ds = None
+
+    gdal.Unlink('/vsimem/tblmain.csv')
+    gdal.Unlink('/vsimem/tblaux.csv')
+
+    assert count == 3
 
 ###############################################################################
 # Test that involves a self-join (to check that we can open twice the same table)
@@ -1517,7 +1559,7 @@ def test_ogr_sql_sqlite_25():
     geomA = ogr.CreateGeometryFromWkt('POLYGON((0 0,0 1,1 1,1 0,0 0))')
     val_ogr = geomA.GetArea()
 
-    assert abs(val_sql - val_ogr) <= 1e-5
+    assert val_sql == pytest.approx(val_ogr, abs=1e-5)
 
     assert val1_sql is None
 
@@ -1564,7 +1606,7 @@ def test_ogr_sql_sqlite_26():
             b_geos = op()
             if b_sql != b_geos:
                 if wkt == 'POLYGON EMPTY':
-                    print('difference wit op = %s and wkt = POLYGON EMPTY' % op_str)
+                    print('difference with op = %s and wkt = POLYGON EMPTY' % op_str)
                 else:
                     print(wkt)
                     print(b_sql)
@@ -1615,8 +1657,15 @@ def test_ogr_sql_sqlite_26():
                     print(geomB_wkt)
                     print(geom_geos.ExportToWkt())
                     pytest.fail('fail with %s' % op_str)
+            elif geom_sql.IsEmpty() and geom_geos.IsEmpty():
+                # geom_sql might be a POLYGON made of an empty ring
+                # while geom_geos is a POLYGON without a ring
+                #import struct
+                #print struct.unpack('B' * len(geom_sql.ExportToWkb()), geom_sql.ExportToWkb())
+                #print struct.unpack('B' * len(geom_geos.ExportToWkb()), geom_geos.ExportToWkb())
+                pass
             else:
-                assert geom_sql.Equals(geom_geos) != 0, ('fail with %s' % op_str)
+                assert geom_sql.Equals(geom_geos) != 0, ('fail with %s: %s %s %s %s' % (op_str, geomA_wkt, geomB_wkt, geom_sql.ExportToWkt(), geom_geos.ExportToWkt()))
 
     # Error cases
     op_str = 'Intersects'

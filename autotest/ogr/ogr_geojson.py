@@ -1566,7 +1566,14 @@ def test_ogr_geojson_38():
         f.DumpReadable()
         pytest.fail()
 
-    
+    ds = gdal.OpenEx("""{"type": "FeatureCollection", "features": [
+{ "type": "Feature", "properties": { "dt": "2014-11-20 12:34:56+0100", "dt2": "2014\/11\/20", "date":"2014\/11\/20", "time":"12:34:56", "no_dt": "2014-11-20 12:34:56+0100", "no_dt2": "2014-11-20 12:34:56+0100" }, "geometry": null }
+] }""", open_options = ['DATE_AS_STRING=YES'])
+    lyr = ds.GetLayer(0)
+    feat_defn = lyr.GetLayerDefn()
+    for i in range(feat_defn.GetFieldCount()):
+        assert feat_defn.GetFieldDefn(i).GetType() == ogr.OFTString
+
 ###############################################################################
 # Test id top-object level
 
@@ -3124,7 +3131,16 @@ def test_ogr_geojson_62():
     ds = gdal.OpenEx("""{ "type": "FeatureCollection", "crs": { "type":"name", "properties":{"name": "urn:ogc:def:crs:EPSG::32631"} }, "features":[] }""")
     lyr = ds.GetLayer(0)
     srs = lyr.GetSpatialRef()
-    assert srs.ExportToWkt().find('32631') >= 0
+    assert srs.GetAuthorityCode(None) == '32631'
+    assert srs.GetDataAxisToSRSAxisMapping() == [1, 2]
+
+
+    # See https://github.com/OSGeo/gdal/issues/2035
+    ds = gdal.OpenEx("""{ "type": "FeatureCollection", "crs": { "type":"name", "properties":{"name": "urn:ogc:def:crs:OGC:1.3:CRS84"} }, "features":[] }""")
+    lyr = ds.GetLayer(0)
+    srs = lyr.GetSpatialRef()
+    assert srs.GetAuthorityCode(None) == '4326'
+    assert srs.GetDataAxisToSRSAxisMapping() == [2, 1]
 
     # crs type=EPSG (not even documented in GJ2008 spec!) tests. Just for coverage completeness
     gdal.OpenEx("""{ "type": "FeatureCollection", "crs": { "type":"EPSG" }, "features":[] }""")

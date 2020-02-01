@@ -2450,6 +2450,10 @@ PDFDataset::~PDFDataset()
     for(int i=0;i<nLayers;i++)
         delete papoLayers[i];
     CPLFree( papoLayers );
+
+    // Do that only after having destroyed Poppler objects
+    if( m_fp )
+        VSIFCloseL(m_fp);
 }
 
 /************************************************************************/
@@ -2576,7 +2580,10 @@ static void PDFDatasetErrorFunctionCommon(const CPLString& osError)
     CPLError(CE_Failure, CPLE_AppDefined, "%s", osError.c_str());
 }
 
-static void PDFDatasetErrorFunction(void* /* userData*/,
+static void PDFDatasetErrorFunction(
+#if !(POPPLER_MAJOR_VERSION >= 1 || POPPLER_MINOR_VERSION >= 85)
+                                    void* /* userData*/,
+#endif
                                     ErrorCategory /* eErrCategory */,
                                     Goffset nPos,
 #if POPPLER_MAJOR_VERSION >= 1 || POPPLER_MINOR_VERSION >= 71
@@ -3338,16 +3345,26 @@ void PDFDataset::AddLayer(const char* pszLayerName)
 /************************************************************************/
 
 void PDFDataset::ExploreLayersPoppler(GDALPDFArray* poArray,
+                               CPLString osTopLayer,
                                int nRecLevel,
-                               CPLString osTopLayer)
+                               int& nVisited,
+                               bool& bStop)
 {
-    if( nRecLevel == 16 )
+    if( nRecLevel == 16 || nVisited == 1000 )
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "ExploreLayersPoppler(): too deep exploration or too many items");
+        bStop = true;
+        return;
+    }
+    if( bStop )
         return;
 
     int nLength = poArray->GetLength();
     CPLString osCurLayer;
     for(int i=0;i<nLength;i++)
     {
+        nVisited++;
         GDALPDFObject* poObj = poArray->Get(i);
         if( poObj == nullptr )
             continue;
@@ -3364,7 +3381,9 @@ void PDFDataset::ExploreLayersPoppler(GDALPDFArray* poArray,
         }
         else if (poObj->GetType() == PDFObjectType_Array)
         {
-            ExploreLayersPoppler(poObj->GetArray(), nRecLevel + 1, osCurLayer);
+            ExploreLayersPoppler(poObj->GetArray(), osCurLayer, nRecLevel + 1, nVisited, bStop);
+            if( bStop )
+                return;
             osCurLayer = "";
         }
         else if (poObj->GetType() == PDFObjectType_Dictionary)
@@ -3412,7 +3431,9 @@ void PDFDataset::FindLayersPoppler()
     if (array)
     {
         GDALPDFArray* poArray = GDALPDFCreateArray(array);
-        ExploreLayersPoppler(poArray, 0);
+        int nVisited = 0;
+        bool bStop = false;
+        ExploreLayersPoppler(poArray, CPLString(), 0, nVisited, bStop);
         delete poArray;
     }
     else
@@ -3629,6 +3650,8 @@ void PDFDataset::ExploreLayersPdfium(GDALPDFArray* poArray,
     for(int i=0;i<nLength;i++)
     {
         GDALPDFObject* poObj = poArray->Get(i);
+        if( poObj == nullptr )
+            continue;
         if (i == 0 && poObj->GetType() == PDFObjectType_String)
         {
             CPLString osName = PDFSanitizeLayerName(poObj->GetString().c_str());
@@ -4064,13 +4087,28 @@ PDFDataset *PDFDataset::Open( GDALOpenInfo * poOpenInfo )
 #endif
     int nPages = 0;
 
+    struct FilePointerKeeper
+    {
+        VSILFILE* m_fp;
+
+        FilePointerKeeper(VSILFILE* fp = nullptr): m_fp(fp) {}
+        ~FilePointerKeeper() { if( m_fp ) VSIFCloseL(m_fp); }
+        void reset(VSILFILE* fp) { if( m_fp ) VSIFCloseL(m_fp); m_fp = fp; }
+        VSILFILE* release() { VSILFILE* ret = m_fp; m_fp = nullptr; return ret; }
+    };
+    FilePointerKeeper fpKeeper;
+
 #ifdef HAVE_POPPLER
   if(bUseLib.test(PDFLIB_POPPLER))
   {
     GooString* poUserPwd = nullptr;
 
     /* Set custom error handler for poppler errors */
+#if POPPLER_MAJOR_VERSION >= 1 || POPPLER_MINOR_VERSION >= 85
+    setErrorCallback(PDFDatasetErrorFunction);
+#else
     setErrorCallback(PDFDatasetErrorFunction, nullptr);
+#endif
 
     {
         CPLMutexHolderD(&hGlobalParamsMutex);
@@ -4088,23 +4126,26 @@ PDFDataset *PDFDataset::Open( GDALOpenInfo * poOpenInfo )
             CPLGetConfigOption("GDAL_PDF_PRINT_COMMANDS", "FALSE")));
     }
 
+    VSILFILE* fp = VSIFOpenL(pszFilename, "rb");
+    if (fp == nullptr)
+        return nullptr;
+
+    fp = (VSILFILE*)VSICreateBufferedReaderHandle((VSIVirtualHandle*)fp);
+    fpKeeper.reset(fp);
+
     while( true )
     {
-        VSILFILE* fp = VSIFOpenL(pszFilename, "rb");
-        if (fp == nullptr)
-            return nullptr;
-
-        fp = (VSILFILE*)VSICreateBufferedReaderHandle((VSIVirtualHandle*)fp);
-
+        VSIFSeekL(fp, 0, SEEK_SET);
         if (pszUserPwd)
             poUserPwd = new GooString(pszUserPwd);
 
 #if POPPLER_MAJOR_VERSION >= 1 || POPPLER_MINOR_VERSION >= 58
-        poDocPoppler = new PDFDoc(new VSIPDFFileStream(fp, pszFilename, std::move(oObj)), nullptr, poUserPwd);
+        auto poStream = new VSIPDFFileStream(fp, pszFilename, std::move(oObj));
 #else
         oObj.getObj()->initNull();
-        poDocPoppler = new PDFDoc(new VSIPDFFileStream(fp, pszFilename, oObj.getObj()), nullptr, poUserPwd);
+        auto poStream = new VSIPDFFileStream(fp, pszFilename, oObj.getObj());
 #endif
+        poDocPoppler = new PDFDoc(poStream, nullptr, poUserPwd);
         delete poUserPwd;
 
         if ( !poDocPoppler->isOk() || poDocPoppler->getNumPages() == 0 )
@@ -4139,11 +4180,26 @@ PDFDataset *PDFDataset::Open( GDALOpenInfo * poOpenInfo )
             }
 
             PDFFreeDoc(poDocPoppler);
+            return nullptr;
+        }
+        else if( poDocPoppler->isLinearized() &&
+                 !poStream->FoundLinearizedHint() )
+        {
+            // This is a likely defect of poppler Linearization.cc file that
+            // recognizes a file as linearized if the /Linearized hint is missing,
+            // but the content of this dictionary are present.
+            // But given the hacks of PDFFreeDoc() and VSIPDFFileStream::FillBuffer()
+            // opening such a file will result in a null-ptr deref at closing if
+            // we try to access a page and build the page cache, so just exit now
+            CPLError(CE_Failure, CPLE_AppDefined, "Invalid PDF");
 
+            PDFFreeDoc(poDocPoppler);
             return nullptr;
         }
         else
+        {
             break;
+        }
     }
 
     poCatalogPoppler = poDocPoppler->getCatalog();
@@ -4374,6 +4430,7 @@ PDFDataset *PDFDataset::Open( GDALOpenInfo * poOpenInfo )
     }
 
     PDFDataset* poDS = new PDFDataset();
+    poDS->m_fp = fpKeeper.release();
     poDS->papszOpenOptions = CSLDuplicate(poOpenInfo->papszOpenOptions);
     poDS->bUseLib = bUseLib;
     poDS->osFilename = pszFilename;
